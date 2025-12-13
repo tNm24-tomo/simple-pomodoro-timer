@@ -1,0 +1,387 @@
+<!doctype html>
+<!-- HTML5文書であることを宣言 -->
+<html lang="ja">
+<head>
+  <!-- 文字コードをUTF-8に設定。日本語が文字化けしないようにする -->
+  <meta charset="UTF-8">
+  <!-- レスポンシブ対応。スマホでも適切な幅で表示 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ポモドーロタイマー</title>
+  <style>
+    /* color-schemeでダーク/ライトをOS設定に合わせやすくする */
+    :root { color-scheme: light dark; }
+
+    /* 画面全体のベーススタイル */
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      max-width: 540px; /* 横幅を抑えて読みやすく */
+    }
+    h1 { margin: 0; }
+
+    /* 共通のカード風コンテナ */
+    .card {
+      padding: 1.25rem;
+      border-radius: 12px;
+      border: 1px solid #ccc;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+      background: rgba(255,255,255,0.8);
+      backdrop-filter: blur(6px);
+    }
+
+    /* タイマーの数字表示を大きくし、等幅風に */
+    .timer {
+      font-size: 3rem;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.08em;
+      margin: 0.5rem 0 1rem;
+    }
+
+    /* ボタン群のレイアウト（横並び＆折返し） */
+    .controls {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    /* ボタンの基本スタイル */
+    button {
+      padding: 0.75rem 1.25rem;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: 600;
+      background: #2f80ed;
+      color: #fff;
+      transition: transform 120ms ease, box-shadow 120ms ease, background 160ms ease;
+    }
+    /* サブボタン色 */
+    button.secondary { background: #6c757d; }
+    /* 無効化されたボタンの見た目 */
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    /* ホバー時のわずかな浮き上がり */
+    button:not(:disabled):hover { transform: translateY(-1px); }
+
+    /* バッジ（サイクル数表示）の見た目 */
+    .badge {
+      display: inline-block;
+      padding: 0.35rem 0.7rem;
+      border-radius: 999px;
+      background: #e0f2ff;
+      color: #0b63c5;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+
+    /* 履歴リストの余白調整 */
+    ul { padding-left: 1.25rem; margin: 0.5rem 0 0; }
+    li { margin-bottom: 0.35rem; }
+
+    /* 状態表示用の横並び */
+    .state {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-weight: 700;
+    }
+    /* 状態を示す小さな丸 */
+    .dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #2f80ed;
+      display: inline-block;
+    }
+    /* 休憩中は緑色のドットに切り替える */
+    .state.break .dot { background: #27ae60; }
+
+    /* 補足テキスト用の色 */
+    .muted { color: #666; font-size: 0.95rem; }
+  </style>
+</head>
+<body>
+  <!-- ヘッダー。タイトルと履歴リセットの注意書き -->
+  <header>
+    <h1>シンプル・ポモドーロ</h1>
+    <p class="muted">ブラウザを閉じると履歴はリセットされます。</p>
+  </header>
+
+  <section class="card">
+    <div class="state" id="stateLabel">
+      <span class="dot"></span><span>作業中</span>
+    </div>
+    <div class="timer" id="timeDisplay">25:00</div>
+    <div class="controls">
+      <button id="startWork">作業開始 (25分)</button>
+      <button id="startBreak" class="secondary">休憩開始 (5分)</button>
+      <button id="pause" class="secondary">一時停止</button>
+      <button id="resume">再開</button>
+      <button id="reset" class="secondary">リセット</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="state">
+      <span class="dot" style="background:#f2994a;"></span>
+      <span>サイクル履歴</span>
+      <span class="badge" id="cycleCount">0 サイクル</span>
+    </div>
+    <p class="muted">作業→休憩の完了で1サイクルとしてカウントします。</p>
+    <ul id="historyList"></ul>
+  </section>
+
+  <script>
+    // ------------------------------------------------------------
+    // このスクリプトのざっくりした流れ
+    // 1) 作業/休憩時間を定数で決める
+    // 2) 画面上の要素を取得し、状態を保持する変数を用意
+    // 3) 画面表示を更新する小さな関数を分けて定義
+    // 4) ボタンを押したときの処理（タイマー開始・リセット）を定義
+    // 5) ページを開いた直後に初期表示をセット
+    // ------------------------------------------------------------
+    // --- タイマー設定値 -------------------------------------------------
+    // 作業と休憩の秒数（25分と5分）。数値は後で残り時間の計算に使う。
+    const WORK_DURATION = 25 * 60;
+    const BREAK_DURATION = 5 * 60;
+
+    // --- HTML要素の参照 --------------------------------------------------
+    // getElementByIdで取得した要素は後の関数で何度も書き換える
+    const display = document.getElementById("timeDisplay");
+    const stateLabel = document.getElementById("stateLabel");
+    const startWorkBtn = document.getElementById("startWork");
+    const startBreakBtn = document.getElementById("startBreak");
+    const pauseBtn = document.getElementById("pause");
+    const resumeBtn = document.getElementById("resume");
+    const resetBtn = document.getElementById("reset");
+    const historyList = document.getElementById("historyList");
+    const cycleCount = document.getElementById("cycleCount");
+
+    // --- 動作状態を保持する変数 -----------------------------------------
+    // mode: 今が作業中か休憩中かを示すフラグ。"work" / "break" の文字列
+    // remaining: 今のモードで残っている秒数。カウントダウンで減らす
+    // timerId: setInterval()の戻り値。後でclearIntervalするために保持
+    // cycles: 作業→休憩が終わった回数。履歴表示とバッジ表示に使う
+    // audioCtx: Web Audio APIのコンテキスト。最初の再生時に生成する
+    let mode = "work";
+    let remaining = WORK_DURATION;
+    let timerId = null;
+    let cycles = 0;
+    let audioCtx = null;
+    let isPaused = false; // 一時停止中かどうか
+
+    function format(seconds) {
+      // 引数seconds: 残り秒数（number）
+      // 返り値: "MM:SS" 形式の文字列。表示エリアで利用する
+      const m = String(Math.floor(seconds / 60)).padStart(2, "0");
+      const s = String(seconds % 60).padStart(2, "0");
+      return `${m}:${s}`;
+    }
+
+    function setState(nextMode) {
+      // 引数nextMode: "work"または"break"。次の状態を指示する
+      // モードを切り替え、残り時間をそのモードの初期値に戻す
+      // さらに表示やボタンの有効・無効を更新する
+      // なぜ関数化するか:
+      // - 作業開始/休憩開始/リセットで同じ処理を共通化し、バグを減らすため
+      // 代替案:
+      // - startTimerの中で直接書くこともできるが、リセット時などで重複が増える
+      mode = nextMode;
+      remaining = mode === "work" ? WORK_DURATION : BREAK_DURATION;
+      updateStateLabel();
+      updateDisplay();
+      updateButtons();
+    }
+
+    function updateStateLabel() {
+      // stateLabel要素のテキストと色を、現在のmodeに合わせて変更
+      // なぜ分離するか:
+      // - 表示更新ロジックをまとめておくと、デザイン変更時にここだけ触ればよい
+      stateLabel.classList.toggle("break", mode === "break");
+      stateLabel.innerHTML = `<span class="dot"></span><span>${mode === "work" ? "作業中" : "休憩中"}</span>`;
+    }
+
+    function updateDisplay() {
+      // 残り時間remainingをフォーマットしてタイマー表示に反映
+      // 代替案:
+      // - formatを呼ばずにここで直接計算することもできるが、責務分離のため関数化
+      display.textContent = format(remaining);
+    }
+
+    function updateButtons() {
+      // 今動いているモードの開始ボタンは押せないようにする
+      // timerIdがnullでない＝カウントダウンが進行中
+      // isPausedがtrueでも「今のモードの開始」は無効にして再開のみ許可する
+      // 代替案:
+      // - disabled属性を直接HTMLで切り替えることもできるが、
+      //   JS側で一元管理した方が状態の整合性がとれる
+      startWorkBtn.disabled = mode === "work" && (timerId !== null || isPaused);
+      startBreakBtn.disabled = mode === "break" && (timerId !== null || isPaused);
+      // 一時停止は「動いているときのみ」有効
+      pauseBtn.disabled = timerId === null;
+      // 再開は「一時停止中かつ残り時間があるとき」に有効
+      resumeBtn.disabled = !(isPaused && remaining > 0);
+    }
+
+    function tick() {
+      // 1秒ごとに残り時間を減らし、0になったら完了処理
+      // setIntervalが呼ぶ「毎秒の仕事」
+      remaining -= 1;
+      updateDisplay();
+      if (remaining <= 0) {
+        clearInterval(timerId);
+        timerId = null;
+        isPaused = false;
+        handleComplete();
+      }
+    }
+
+    function startTimer(nextMode) {
+      // 指定のモードでカウントダウンを開始
+      // なぜsetIntervalを使うか:
+      // - 単純に1秒刻みで処理したいから
+      // 代替案:
+      // - setTimeoutを再帰的に呼ぶ方法: 精度は近いがコードが少し長くなる
+      // - requestAnimationFrame: 高頻度すぎて1秒カウントには不要
+      if (timerId) clearInterval(timerId);
+      if (mode !== nextMode) setState(nextMode);
+      timerId = setInterval(tick, 1000);
+      isPaused = false;
+      updateButtons();
+    }
+
+    function pauseTimer() {
+      // 進行中のタイマーを止めて残り時間を保持
+      if (!timerId) return;
+      clearInterval(timerId);
+      timerId = null;
+      isPaused = true;
+      updateButtons();
+    }
+
+    function resumeTimer() {
+      // 一時停止したところから再開（modeとremainingはそのまま）
+      if (!isPaused || remaining <= 0) return;
+      timerId = setInterval(tick, 1000);
+      isPaused = false;
+      updateButtons();
+    }
+
+    function handleComplete() {
+      // モードごとに完了時の処理と案内
+      // なぜalertを使うか:
+      // - 画面外を見ていても気づきやすい簡易な通知手段
+      // 代替案:
+      // - カスタムモーダルやトースト表示: UIは良くなるが実装が増える
+      // - Notification API: 許可が必要で、環境によりブロックされることもある
+      playChime();
+      if (mode === "work") {
+        startBreakBtn.disabled = false;
+        alert("作業が終わりました。休憩を始めましょう。");
+      } else {
+        cycles += 1;
+        appendHistory();
+        alert("休憩が終わりました。次の作業を始めましょう。");
+      }
+      timerId = null;
+      updateButtons();
+    }
+
+    function appendHistory() {
+      // サイクル完了時に履歴へ追記
+      // なぜprependするか:
+      // - 新しい履歴を上に追加し、最新が見やすいようにする
+      // 代替案:
+      // - pushして末尾に出す方法もあるが、スクロールが必要になりやすい
+      const item = document.createElement("li");
+      const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      item.textContent = `${cycles} サイクル完了 (${now})`;
+      historyList.prepend(item);
+      cycleCount.textContent = `${cycles} サイクル`;
+    }
+
+    function playChime() {
+      // Web Audio APIで柔らかい2トーンのチャイムを鳴らす
+      // 初回だけAudioContextを作成し、2回目以降は再利用する
+      // なぜWeb Audio APIか:
+      // - 外部音源ファイルを用意せず、短い通知音をコードで生成できる
+      // 代替案:
+      // - HTMLAudioElementでmp3/oggを再生: 準備が簡単だが音源ファイルが必要
+      // - Notificationのsoundはブラウザによって制限があり統一しづらい
+      if (!audioCtx) {
+        try {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        } catch (e) {
+          console.warn("AudioContextを初期化できませんでした:", e);
+          return;
+        }
+      }
+      const ctx = audioCtx; // 以降この文脈で音を生成・再生する
+      const now = ctx.currentTime; // 現在のオーディオ時間。スケジュールの基準時刻
+
+      const osc = ctx.createOscillator(); // 発振器。音の高さ（周波数）を設定
+      const gain = ctx.createGain();      // 音量調整用ノード。フェードイン・アウトに使う
+
+      osc.type = "sine"; // サイン波。耳に刺さりにくい柔らかい音
+      // 2ステップで少し上昇する優しい音にする
+      osc.frequency.setValueAtTime(660, now);               // 660Hz (E5) から
+      osc.frequency.linearRampToValueAtTime(880, now + 0.35); // 880Hz (A5) へ滑らかに上げる
+
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.25, now + 0.05);     // 0→25%まで緩やかに立ち上げ
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8); // その後指数的に減衰して余韻を作る
+
+      osc.connect(gain).connect(ctx.destination); // 発振器 → 音量 → 出力先(スピーカー)
+      osc.start(now);          // nowの時刻で再生開始
+      osc.stop(now + 0.9);     // 0.9秒後に停止（短いチャイムにする）
+    }
+
+    // --- ボタンにクリック処理を結びつける -------------------------------
+    startWorkBtn.addEventListener("click", () => {
+      // 「作業開始」ボタンが押されたら作業モードのカウントダウンを始める
+      startTimer("work");
+    });
+
+    startBreakBtn.addEventListener("click", () => {
+      // 「休憩開始」ボタンが押されたら休憩モードのカウントダウンを始める
+      startTimer("break");
+    });
+
+    pauseBtn.addEventListener("click", () => {
+      // 「一時停止」ボタン: カウントダウンを止めて残り時間を保持
+      pauseTimer();
+    });
+
+    resumeBtn.addEventListener("click", () => {
+      // 「再開」ボタン: 一時停止したところから続きからカウント再開
+      resumeTimer();
+    });
+
+    resetBtn.addEventListener("click", () => {
+      // 「リセット」ボタン: タイマーを止めて履歴と回数を初期化
+      if (timerId) clearInterval(timerId);
+      timerId = null;
+      isPaused = false;
+      cycles = 0;
+      historyList.innerHTML = "";
+      cycleCount.textContent = "0 サイクル";
+      setState("work"); // 作業モードに戻し、25:00にリセット
+    });
+
+    // 初期表示
+    // ページを開いた直後に、状態表示・時間表示・ボタン状態を正しく整える
+    updateStateLabel();
+    updateDisplay();
+    updateButtons();
+  </script>
+</body>
+</html>
+
