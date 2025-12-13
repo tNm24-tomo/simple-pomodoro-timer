@@ -19,40 +19,30 @@ This repository is named `simple-pomodoro-timer` and focuses on clarity and mini
 
 ### Run the local server
 From the project root:
-```bash
-python main.py
 
-Then open:
-http://localhost:8000
+    python main.py
 
-Project Structure
+Then open the following URL in your browser:
 
-main.py — Serves static files using Python’s built-in SimpleHTTPRequestHandler
+    http://localhost:8000
 
-index.html — Pomotai UI and timer logic (HTML / CSS / JavaScript)
+## Project Structure
+- `main.py` — Serves static files using Python’s built-in `SimpleHTTPRequestHandler`
+- `index.html` — Pomotai UI and timer logic (HTML / CSS / JavaScript)
 
-Usage
+## Usage
+- Click “Start Work (25)” to begin a focus session
+- Click “Start Break (5)” to begin a break
+- Use “Pause” / “Resume” to manage interruptions
+- “Reset” clears the current timer (history resets when the browser is closed)
 
-Click “Start Work (25)” to begin a focus session
+## Customization
+- Adjust durations in `index.html` by changing `WORK_DURATION` and `BREAK_DURATION` (in seconds)
+- Change the default port by editing the `serve` function in `main.py`
 
-Click “Start Break (5)” to begin a break
+## Development Notes
+- Uses only Python’s standard library
+- Designed as a small learning-focused personal project
 
-Use “Pause” / “Resume” to manage interruptions
-
-“Reset” clears the current timer (history resets when the browser is closed)
-
-Customization
-
-Adjust durations in index.html by changing WORK_DURATION and BREAK_DURATION (in seconds)
-
-Change the default port by editing the serve function in main.py
-
-Development Notes
-
-Uses only Python’s standard library
-
-Designed as a small learning-focused personal project
-
-License
-
+## License
 MIT
