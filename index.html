@@ -41,6 +41,60 @@
       margin: 0.5rem 0 1rem;
     }
 
+    /* 水槽の見た目と水面アニメーション */
+    .tank {
+      position: relative;
+      height: 220px;
+      border-radius: 14px;
+      border: 2px solid #9fb7ff;
+      background: linear-gradient(180deg, #f9fcff 0%, #f1f5ff 40%, #eaf2ff 100%);
+      overflow: hidden;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.8), inset 0 -6px 20px rgba(0,0,0,0.06);
+      margin-bottom: 1rem;
+    }
+    .water {
+      position: absolute;
+      inset: auto 0 0 0;
+      height: 0%;
+      background: linear-gradient(180deg, #5fb3ff 0%, #4ea1f1 55%, #3c8bdc 100%);
+      transition: height 0.4s ease;
+      animation: bob 3s ease-in-out infinite;
+      will-change: height;
+    }
+    .water.break {
+      background: linear-gradient(180deg, #7fd8a0 0%, #52c68e 55%, #3aa97c 100%);
+    }
+    .water::before,
+    .water::after {
+      content: "";
+      position: absolute;
+      left: -50%;
+      width: 200%;
+      height: 35px;
+      background: radial-gradient(circle at 10% 60%, rgba(255,255,255,0.45), rgba(255,255,255,0) 45%),
+                  radial-gradient(circle at 30% 40%, rgba(255,255,255,0.35), rgba(255,255,255,0) 40%),
+                  radial-gradient(circle at 70% 50%, rgba(255,255,255,0.4), rgba(255,255,255,0) 42%);
+      opacity: 0.7;
+    }
+    .water::before {
+      top: -18px;
+      animation: waveFloat 8s linear infinite;
+    }
+    .water::after {
+      top: -12px;
+      animation: waveFloat 6s linear infinite reverse;
+      opacity: 0.5;
+    }
+    @keyframes waveFloat {
+      from { transform: translateX(0); }
+      to { transform: translateX(-50%); }
+    }
+    @keyframes bob {
+      0% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
+      100% { transform: translateY(0); }
+    }
+
     /* ボタン群のレイアウト（横並び＆折返し） */
     .controls {
       display: flex;
@@ -120,6 +174,9 @@
       <span class="dot"></span><span>作業中</span>
     </div>
     <div class="timer" id="timeDisplay">25:00</div>
+    <div class="tank" aria-hidden="true">
+      <div class="water" id="water"></div>
+    </div>
     <div class="controls">
       <button id="startWork">作業開始 (25分)</button>
       <button id="startBreak" class="secondary">休憩開始 (5分)</button>
@@ -164,6 +221,7 @@
     const resetBtn = document.getElementById("reset");
     const historyList = document.getElementById("historyList");
     const cycleCount = document.getElementById("cycleCount");
+    const water = document.getElementById("water");
 
     // --- 動作状態を保持する変数 -----------------------------------------
     // mode: 今が作業中か休憩中かを示すフラグ。"work" / "break" の文字列
@@ -198,6 +256,7 @@
       remaining = mode === "work" ? WORK_DURATION : BREAK_DURATION;
       updateStateLabel();
       updateDisplay();
+      updateWaterLevel();
       updateButtons();
     }
 
@@ -214,6 +273,15 @@
       // 代替案:
       // - formatを呼ばずにここで直接計算することもできるが、責務分離のため関数化
       display.textContent = format(remaining);
+    }
+
+    function updateWaterLevel() {
+      // 残り時間に応じて水位を更新（進行度0〜100%）
+      const total = mode === "work" ? WORK_DURATION : BREAK_DURATION;
+      const progress = 1 - remaining / total;
+      const clamped = Math.min(1, Math.max(0, progress));
+      water.style.height = `${clamped * 100}%`;
+      water.classList.toggle("break", mode === "break");
     }
 
     function updateButtons() {
@@ -236,6 +304,7 @@
       // setIntervalが呼ぶ「毎秒の仕事」
       remaining -= 1;
       updateDisplay();
+      updateWaterLevel();
       if (remaining <= 0) {
         clearInterval(timerId);
         timerId = null;
@@ -380,8 +449,8 @@
     // ページを開いた直後に、状態表示・時間表示・ボタン状態を正しく整える
     updateStateLabel();
     updateDisplay();
+    updateWaterLevel();
     updateButtons();
   </script>
 </body>
 </html>
-
